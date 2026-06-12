@@ -65,6 +65,18 @@ export default function RoomScanPage() {
     }
   }, [captureFrame]);
 
+  // Attach the camera stream to the video element once the scanning phase mounts it.
+  useEffect(() => {
+    if (phase !== "scanning") return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    video.srcObject = stream;
+    video.play().catch(() => {
+      // autoplay may be blocked; user gesture will trigger play
+    });
+  }, [phase]);
+
   useEffect(() => {
     if (phase !== "scanning") return;
 
@@ -113,7 +125,8 @@ export default function RoomScanPage() {
         },
       });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      // Don't assign srcObject here — the video element doesn't exist yet.
+      // A useEffect fires after the "scanning" phase re-render mounts it.
       setPhase("scanning");
     } catch (err) {
       setCameraError("Camera access denied. Please allow camera access and reload.");
@@ -221,12 +234,13 @@ export default function RoomScanPage() {
       {/* PHASE: Scanning */}
       {phase === "scanning" && (
         <>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-h-0" style={{ minHeight: "calc(100dvh - 56px)" }}>
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
+              {...{ "webkit-playsinline": "true" } as React.VideoHTMLAttributes<HTMLVideoElement>}
               className="absolute inset-0 w-full h-full object-cover"
               data-testid="video-camera"
             />
