@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "HousePlan"
+version = "1.0.0"
+id = "artifacts/houseplan"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20221
+
+[services.development]
+run = "pnpm --filter @workspace/houseplan run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/houseplan", "run", "build" ]
+publicDir = "artifacts/houseplan/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20221"
+BASE_PATH = "/"
