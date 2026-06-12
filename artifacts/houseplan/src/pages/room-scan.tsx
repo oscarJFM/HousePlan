@@ -1,10 +1,19 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation, useParams } from "wouter";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Camera, RotateCcw, Check, Loader2, ImageIcon } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, RotateCcw, Camera, Smartphone } from "lucide-react";
+
+const CAPTURE_SECTORS = 12; // capture every 30° of yaw
+const SPHERE_RADIUS = 360 / CAPTURE_SECTORS;
+
+interface CapturedFrame {
+  dataUrl: string;
+  yaw: number;
+  pitch: number;
+}
 
 export default function RoomScanPage() {
   const { id: roomId } = useParams<{ id: string }>();
@@ -15,42 +24,99 @@ export default function RoomScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const orientRef = useRef({ yaw: 0, pitch: 0 });
+  const lastCapturedYaw = useRef<Set<number>>(new Set());
 
-  const [phase, setPhase] = useState<"camera" | "preview" | "saved">("camera");
-  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [photoCount, setPhotoCount] = useState(0);
-  const [saving, setSaving] = useState(false);
+  const [phase, setPhase] = useState<"permission" | "scanning" | "uploading" | "done">("permission");
+  const [frames, setFrames] = useState<CapturedFrame[]>([]);
+  const [coveredSectors, setCoveredSectors] = useState<Set<number>>(new Set());
+  const [currentYaw, setCurrentYaw] = useState(0);
+  const [hasOrientation, setHasOrientation] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  useEffect(() => {
-    loadPhotoCount();
-    startCamera();
-    return () => stopCamera();
+  const sectorFor = (yaw: number) =>
+    Math.floor(((yaw % 360) + 360) % 360 / SPHERE_RADIUS);
+
+  const captureFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth) return null;
+
+    const W = 640, H = Math.round(640 * (video.videoHeight / video.videoWidth));
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, W, H);
+    return canvas.toDataURL("image/jpeg", 0.8);
   }, []);
 
-  async function loadPhotoCount() {
-    const { count } = await supabase
-      .from("room_photos")
-      .select("id", { count: "exact", head: true })
-      .eq("room_id", roomId);
-    setPhotoCount(count ?? 0);
-  }
+  const tryAutoCapture = useCallback(() => {
+    const { yaw, pitch } = orientRef.current;
+    const sector = sectorFor(yaw);
+    if (!lastCapturedYaw.current.has(sector)) {
+      const dataUrl = captureFrame();
+      if (dataUrl) {
+        lastCapturedYaw.current.add(sector);
+        setCoveredSectors((prev) => new Set([...prev, sector]));
+        setFrames((prev) => [...prev, { dataUrl, yaw, pitch }]);
+      }
+    }
+  }, [captureFrame]);
 
-  async function startCamera() {
+  useEffect(() => {
+    if (phase !== "scanning") return;
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const yaw = e.alpha ?? 0;
+      const pitch = e.beta ?? 0;
+      orientRef.current = { yaw, pitch };
+      setCurrentYaw(yaw);
+      setHasOrientation(true);
+      tryAutoCapture();
+    };
+
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    return () => window.removeEventListener("deviceorientation", handleOrientation, true);
+  }, [phase, tryAutoCapture]);
+
+  async function requestPermissionsAndStart() {
     setCameraError(null);
+    // iOS 13+ requires explicit permission for device orientation
+    if (
+      typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> })
+        .requestPermission === "function"
+    ) {
+      try {
+        const result = await (
+          DeviceOrientationEvent as unknown as { requestPermission: () => Promise<string> }
+        ).requestPermission();
+        if (result !== "granted") {
+          toast({
+            title: "Motion access denied",
+            description: "We need motion access to track scan direction.",
+            variant: "destructive",
+          });
+        }
+      } catch {
+        // permission not needed on this device
+      }
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setPhase("scanning");
     } catch (err) {
-      setCameraError(
-        "Camera access denied. Please allow camera access and try again."
-      );
+      setCameraError("Camera access denied. Please allow camera access and reload.");
     }
   }
 
@@ -58,79 +124,62 @@ export default function RoomScanPage() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
   }
 
-  function capturePhoto() {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        setCapturedBlob(blob);
-        setPreviewUrl(URL.createObjectURL(blob));
-        setPhase("preview");
-        stopCamera();
-      },
-      "image/jpeg",
-      0.9
-    );
-  }
-
-  function retake() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setCapturedBlob(null);
-    setPreviewUrl(null);
-    setPhase("camera");
-    startCamera();
-  }
-
-  async function savePhoto() {
-    if (!user || !capturedBlob) return;
-    setSaving(true);
-
-    const fileName = `${Date.now()}.jpg`;
-    const filePath = `${user.id}/${roomId}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("room-photos")
-      .upload(filePath, capturedBlob, { contentType: "image/jpeg" });
-
-    if (uploadError) {
-      toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
-      setSaving(false);
+  async function finishScan() {
+    if (frames.length === 0) {
+      toast({ title: "No frames captured", description: "Move your phone around to scan the room first.", variant: "destructive" });
       return;
     }
+    stopCamera();
+    setPhase("uploading");
 
-    const { error: dbError } = await supabase.from("room_photos").insert({
-      room_id: roomId,
-      user_id: user.id,
-      storage_path: filePath,
-    });
+    // Delete old scan frames for this room
+    await supabase.from("room_photos").delete().eq("room_id", roomId);
 
-    setSaving(false);
-    if (dbError) {
-      toast({ title: "Failed to save photo record", description: dbError.message, variant: "destructive" });
-    } else {
-      const newCount = photoCount + 1;
-      setPhotoCount(newCount);
-      toast({ title: "Photo saved!" });
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setCapturedBlob(null);
-      setPreviewUrl(null);
-      setPhase("camera");
-      startCamera();
+    let uploaded = 0;
+    for (const frame of frames) {
+      const blob = await (await fetch(frame.dataUrl)).blob();
+      const filename = `frame_yaw${frame.yaw.toFixed(1)}_pitch${frame.pitch.toFixed(1)}_${Date.now()}.jpg`;
+      const storagePath = `${user!.id}/${roomId}/${filename}`;
+
+      const { error: storageErr } = await supabase.storage
+        .from("room-photos")
+        .upload(storagePath, blob, { contentType: "image/jpeg", upsert: true });
+
+      if (!storageErr) {
+        await supabase.from("room_photos").insert({
+          room_id: roomId,
+          user_id: user!.id,
+          storage_path: storagePath,
+        });
+      }
+
+      uploaded++;
+      setUploadProgress(Math.round((uploaded / frames.length) * 100));
     }
+
+    setPhase("done");
+    setTimeout(() => {
+      setLocation(`/rooms/${roomId}`);
+    }, 1500);
   }
+
+  function manualCapture() {
+    const dataUrl = captureFrame();
+    if (!dataUrl) return;
+    const { yaw, pitch } = orientRef.current;
+    const sector = sectorFor(yaw);
+    lastCapturedYaw.current.add(sector);
+    setCoveredSectors((prev) => new Set([...prev, sector]));
+    setFrames((prev) => [...prev, { dataUrl, yaw, pitch }]);
+  }
+
+  const coveragePercent = Math.round((coveredSectors.size / CAPTURE_SECTORS) * 100);
+  const allCovered = coveredSectors.size >= CAPTURE_SECTORS;
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 z-10">
+      {/* Header */}
+      <header className="flex items-center justify-between px-4 py-3 z-20 relative">
         <Button
           variant="ghost"
           size="sm"
@@ -141,84 +190,199 @@ export default function RoomScanPage() {
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
         </Button>
-        <div className="flex items-center gap-2 text-white text-sm">
-          <ImageIcon className="h-4 w-4" />
-          <span data-testid="text-photo-count">{photoCount} photo{photoCount !== 1 ? "s" : ""} saved</span>
-        </div>
+        <div className="text-white text-sm font-medium">Room Scan</div>
+        <div className="w-16" />
       </header>
 
-      <div className="flex-1 relative flex flex-col items-center justify-center">
-        {cameraError ? (
-          <div className="text-center text-white/70 px-8">
-            <Camera className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">{cameraError}</p>
-            <Button
-              className="mt-4"
-              variant="secondary"
-              onClick={startCamera}
-              data-testid="button-retry-camera"
-            >
-              Try again
-            </Button>
+      {/* PHASE: Permission */}
+      {phase === "permission" && (
+        <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6 text-center">
+          <div className="bg-primary/10 rounded-full p-6">
+            <Smartphone className="h-12 w-12 text-primary" />
           </div>
-        ) : phase === "camera" ? (
-          <>
+          <div>
+            <h2 className="text-white text-xl font-bold mb-2">Scan your room</h2>
+            <p className="text-white/60 text-sm">
+              Hold up your phone and slowly rotate 360° around the room.
+              The app will automatically capture frames and build a 3D panorama
+              you can label.
+            </p>
+          </div>
+          {cameraError && (
+            <p className="text-red-400 text-sm bg-red-950/40 rounded-lg px-4 py-2">{cameraError}</p>
+          )}
+          <Button onClick={requestPermissionsAndStart} size="lg" className="gap-2" data-testid="button-start-scan">
+            <Camera className="h-5 w-5" />
+            Start scanning
+          </Button>
+        </div>
+      )}
+
+      {/* PHASE: Scanning */}
+      {phase === "scanning" && (
+        <>
+          <div className="flex-1 relative">
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover absolute inset-0"
+              className="absolute inset-0 w-full h-full object-cover"
               data-testid="video-camera"
             />
-            <div className="absolute inset-0 border-2 border-white/20 m-8 rounded-xl pointer-events-none" />
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2">
-              <button
-                onClick={capturePhoto}
-                data-testid="button-capture"
-                className="w-16 h-16 rounded-full bg-white border-4 border-white/50 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-              />
+
+            {/* Scan overlay */}
+            <div className="absolute inset-0 flex flex-col items-center">
+              {/* Top guide */}
+              <div className="mt-4 bg-black/60 backdrop-blur-sm rounded-full px-4 py-2 text-white text-sm text-center max-w-[280px]">
+                {allCovered
+                  ? "✅ Full scan complete — tap Done"
+                  : hasOrientation
+                  ? "Rotate slowly to cover the whole room"
+                  : "Move your phone slowly to scan the room"}
+              </div>
+
+              {/* Radial coverage indicator */}
+              <div className="mt-4">
+                <ScanRadar
+                  coveredSectors={coveredSectors}
+                  totalSectors={CAPTURE_SECTORS}
+                  currentYaw={currentYaw}
+                />
+              </div>
+
+              <div className="mt-2 text-white/70 text-xs">{coveragePercent}% covered · {frames.length} frames</div>
             </div>
-          </>
-        ) : (
-          <>
-            {previewUrl && (
-              <img
-                src={previewUrl}
-                alt="Captured room photo"
-                className="w-full h-full object-cover absolute inset-0"
-                data-testid="img-preview"
-              />
-            )}
-            <div className="absolute bottom-10 flex gap-4">
+
+            {/* Bottom controls */}
+            <div className="absolute bottom-8 inset-x-0 flex items-center justify-center gap-6">
               <Button
                 variant="secondary"
-                size="lg"
-                onClick={retake}
-                disabled={saving}
-                data-testid="button-retake"
+                onClick={manualCapture}
+                className="rounded-full h-12 w-12 p-0"
+                data-testid="button-manual-capture"
+                title="Manual capture"
               >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Retake
+                <Camera className="h-5 w-5" />
               </Button>
-              <Button
-                size="lg"
-                onClick={savePhoto}
-                disabled={saving}
-                data-testid="button-save-photo"
+              <button
+                onClick={finishScan}
+                data-testid="button-done-scan"
+                className="w-16 h-16 rounded-full bg-primary shadow-lg flex items-center justify-center text-primary-foreground font-semibold text-sm hover:bg-primary/90 active:scale-95 transition-transform"
               >
-                {saving ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
-                ) : (
-                  <><Check className="h-4 w-4 mr-2" /> Save to room</>
-                )}
+                Done
+              </button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFrames([]);
+                  setCoveredSectors(new Set());
+                  lastCapturedYaw.current.clear();
+                }}
+                className="rounded-full h-12 w-12 p-0"
+                data-testid="button-reset-scan"
+                title="Reset scan"
+              >
+                <RotateCcw className="h-5 w-5" />
               </Button>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
+
+      {/* PHASE: Uploading */}
+      {phase === "uploading" && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          <p className="text-white font-medium">Building your panorama…</p>
+          <div className="w-48 bg-white/20 rounded-full h-2 overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          <p className="text-white/50 text-sm">{uploadProgress}% uploaded</p>
+        </div>
+      )}
+
+      {/* PHASE: Done */}
+      {phase === "done" && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <CheckCircle className="h-12 w-12 text-green-400" />
+          <p className="text-white font-medium text-lg">Scan complete!</p>
+          <p className="text-white/60 text-sm">Redirecting to your room…</p>
+        </div>
+      )}
 
       <canvas ref={canvasRef} className="hidden" />
     </div>
+  );
+}
+
+// ── Radial scan progress indicator ──────────────────────────────
+function ScanRadar({
+  coveredSectors,
+  totalSectors,
+  currentYaw,
+}: {
+  coveredSectors: Set<number>;
+  totalSectors: number;
+  currentYaw: number;
+}) {
+  const size = 120;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 50;
+
+  const sectorAngle = (2 * Math.PI) / totalSectors;
+
+  return (
+    <svg width={size} height={size} className="drop-shadow-lg">
+      {/* Background circle */}
+      <circle cx={cx} cy={cy} r={r} fill="rgba(0,0,0,0.5)" stroke="rgba(255,255,255,0.2)" strokeWidth={1} />
+
+      {/* Covered sectors */}
+      {Array.from({ length: totalSectors }, (_, i) => {
+        const startAngle = i * sectorAngle - Math.PI / 2;
+        const endAngle = startAngle + sectorAngle;
+        const x1 = cx + r * Math.cos(startAngle);
+        const y1 = cy + r * Math.sin(startAngle);
+        const x2 = cx + r * Math.cos(endAngle);
+        const y2 = cy + r * Math.sin(endAngle);
+        const covered = coveredSectors.has(i);
+
+        return (
+          <path
+            key={i}
+            d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`}
+            fill={covered ? "rgba(245,158,11,0.7)" : "rgba(255,255,255,0.05)"}
+            stroke="rgba(0,0,0,0.3)"
+            strokeWidth={1}
+          />
+        );
+      })}
+
+      {/* Current direction needle */}
+      {(() => {
+        const angle = ((currentYaw - 90) * Math.PI) / 180;
+        return (
+          <line
+            x1={cx}
+            y1={cy}
+            x2={cx + (r - 5) * Math.cos(angle)}
+            y2={cy + (r - 5) * Math.sin(angle)}
+            stroke="white"
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        );
+      })()}
+
+      {/* Center dot */}
+      <circle cx={cx} cy={cy} r={4} fill="white" />
+      <text x={cx} y={cy + 22} textAnchor="middle" fill="white" fontSize={9} opacity={0.7}>
+        N
+      </text>
+    </svg>
   );
 }
