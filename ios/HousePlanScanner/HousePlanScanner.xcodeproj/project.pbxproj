@@ -11,7 +11,6 @@
 		A1000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000002 /* ContentView.swift */; };
 		A1000003 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000003 /* AuthView.swift */; };
 		A1000004 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000004 /* DashboardView.swift */; };
-		A1000005 /* RoomScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000005 /* RoomScanView.swift */; };
 		A1000006 /* RoomDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000006 /* RoomDetailView.swift */; };
 		A1000007 /* RoomPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000007 /* RoomPlanView.swift */; };
 		A1000008 /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000008 /* SupabaseService.swift */; };
@@ -25,7 +24,6 @@
 		A0000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A0000003 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AuthView.swift; sourceTree = "<group>"; };
 		A0000004 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DashboardView.swift; sourceTree = "<group>"; };
-		A0000005 /* RoomScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/RoomScanView.swift; sourceTree = "<group>"; };
 		A0000006 /* RoomDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/RoomDetailView.swift; sourceTree = "<group>"; };
 		A0000007 /* RoomPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/RoomPlanView.swift; sourceTree = "<group>"; };
 		A0000008 /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SupabaseService.swift; sourceTree = "<group>"; };
@@ -51,7 +49,6 @@
 				A0000002 /* ContentView.swift */,
 				A0000003 /* AuthView.swift */,
 				A0000004 /* DashboardView.swift */,
-				A0000005 /* RoomScanView.swift */,
 				A0000006 /* RoomDetailView.swift */,
 				A0000007 /* RoomPlanView.swift */,
 				A0000008 /* SupabaseService.swift */,
@@ -143,7 +140,6 @@
 				A1000002 /* ContentView.swift in Sources */,
 				A1000003 /* AuthView.swift in Sources */,
 				A1000004 /* DashboardView.swift in Sources */,
-				A1000005 /* RoomScanView.swift in Sources */,
 				A1000006 /* RoomDetailView.swift in Sources */,
 				A1000007 /* RoomPlanView.swift in Sources */,
 				A1000008 /* SupabaseService.swift in Sources */,
