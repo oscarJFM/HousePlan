@@ -21,7 +21,7 @@ final class SupabaseService: ObservableObject {
     }
     private var anonKey: String {
         ProcessInfo.processInfo.environment["SUPABASE_ANON_KEY"]
-            ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5bGJ0bHZzcGZ5d2l6YW5la2NyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0NzU5NjksImV4cCI6MjA3NjA1MTk2OX0.2800000000000000000000000000000000000000"
+            ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5bGJ0bHZzcGZ5d2l6YW5la2NyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNzY4MDQsImV4cCI6MjA5Njg1MjgwNH0.if8MEkqTNOn0HfKmNxm58VKaJLliEuq-egH_zY6oB08"
     }
 
     // ── Auth state ───────────────────────────────────────────────────────────
