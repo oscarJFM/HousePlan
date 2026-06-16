@@ -1,0 +1,58 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          echo "Using: $XCODE"
+          xcodebuild -version
+
+      - name: Build archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project ios/HousePlanScanner/HousePlanScanner.xcodeproj \
+            -scheme HousePlanScanner \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$PWD/build/HousePlanScanner.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee build.log | grep -E "(error:|warning:|BUILD)"
+
+      - name: Package unsigned IPA
+        run: |
+          APP=$(find build/HousePlanScanner.xcarchive/Products/Applications -name "*.app" | head -1)
+          mkdir -p build/Payload
+          cp -r "$APP" build/Payload/
+          cd build && zip -qr HousePlanScanner-unsigned.ipa Payload/
+          echo "IPA size: $(du -sh HousePlanScanner-unsigned.ipa | cut -f1)"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: HousePlanScanner-unsigned-ipa
+          path: build/HousePlanScanner-unsigned.ipa
+          retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7

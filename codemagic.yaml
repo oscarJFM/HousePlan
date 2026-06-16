@@ -1,0 +1,34 @@
+workflows:
+  ios-houseplan:
+    name: HousePlan iOS Build
+    max_build_duration: 60
+
+    environment:
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Build unsigned IPA
+        script: |
+          xcodebuild archive \
+            -project ios/HousePlanScanner/HousePlanScanner.xcodeproj \
+            -scheme HousePlanScanner \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/HousePlanScanner.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package as IPA
+        script: |
+          APP=$(find "$CM_BUILD_DIR/HousePlanScanner.xcarchive/Products/Applications" \
+            -name "*.app" | head -1)
+          mkdir -p "$CM_BUILD_DIR/Payload"
+          cp -r "$APP" "$CM_BUILD_DIR/Payload/"
+          cd "$CM_BUILD_DIR"
+          zip -qr HousePlanScanner-unsigned.ipa Payload/
+
+    artifacts:
+      - $CM_BUILD_DIR/HousePlanScanner-unsigned.ipa
