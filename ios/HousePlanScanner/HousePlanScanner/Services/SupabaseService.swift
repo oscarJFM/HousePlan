@@ -113,7 +113,8 @@ final class SupabaseService: ObservableObject {
     }
 
     func createRoom(name: String, description: String?, floorArea: Double?) async throws -> Room {
-        var body: [String: Any] = ["name": name]
+        guard let userId = currentUser?.id else { throw AppError.notAuthenticated }
+        var body: [String: Any] = ["name": name, "user_id": userId.uuidString]
         if let d = description, !d.isEmpty { body["description"] = d }
         if let a = floorArea { body["floor_area"] = a }
         let data = try await post(path: "/rest/v1/rooms", body: body, returning: "representation")
