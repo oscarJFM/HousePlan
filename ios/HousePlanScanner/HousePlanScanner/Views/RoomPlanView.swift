@@ -117,10 +117,14 @@ extension RoomCaptureSession.Instruction: @retroactive CustomStringConvertible {
 
 struct RoomCaptureViewRepresentable: UIViewRepresentable {
     @ObservedObject var coordinator: RoomCaptureCoordinator
+    @Binding var captureView: RoomCaptureView?
 
     func makeUIView(context: Context) -> RoomCaptureView {
         let view = RoomCaptureView(frame: .zero)
         coordinator.startSession(captureView: view)
+        DispatchQueue.main.async {
+            captureView = view
+        }
         return view
     }
 
@@ -148,11 +152,19 @@ struct RoomScanView: View {
 
     enum Phase { case scanning, reviewing, uploading, done }
 
+    func stopScan() {
+        if let view = captureView {
+            coordinator.stopSession(captureView: view)
+        }
+        coordinator.isScanning = false
+        phase = .reviewing
+    }
+
     var body: some View {
         ZStack {
             // ── Scanning phase ─────────────────────────────────────────────
             if phase == .scanning {
-                RoomCaptureViewRepresentable(coordinator: coordinator)
+                RoomCaptureViewRepresentable(coordinator: coordinator, captureView: $captureView)
                     .ignoresSafeArea()
 
                 VStack {
@@ -295,12 +307,10 @@ struct RoomScanView: View {
 
     // ── Control helpers ────────────────────────────────────────────────────
 
-    private func stopScan() {
-        coordinator.isScanning = false
-        phase = .reviewing
-    }
-
     private func stopAndDismiss() {
+        if let view = captureView {
+            coordinator.stopSession(captureView: view)
+        }
         coordinator.isScanning = false
         dismiss()
     }
