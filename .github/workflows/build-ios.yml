@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: macos-15
@@ -13,15 +16,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select latest Xcode
+      - name: Show available Xcode versions
+        run: ls /Applications/ | grep -i xcode || echo "No Xcode found"
+
+      - name: Select Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          sudo xcode-select -s "$XCODE"
-          echo "Using: $XCODE"
+          # Pick the newest Xcode available on this runner
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "ERROR: No Xcode.app found in /Applications"
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          echo "Selected: $XCODE"
           xcodebuild -version
+
+      - name: Verify project exists
+        run: |
+          PROJECT="ios/HousePlanScanner/HousePlanScanner.xcodeproj"
+          if [ ! -d "$PROJECT" ]; then
+            echo "ERROR: Project not found at $PROJECT"
+            find . -name "*.xcodeproj" 2>/dev/null
+            exit 1
+          fi
+          echo "Project found: $PROJECT"
+          xcodebuild -list -project "$PROJECT"
 
       - name: Build archive (unsigned)
         run: |
+          set -o pipefail
           xcodebuild archive \
             -project ios/HousePlanScanner/HousePlanScanner.xcodeproj \
             -scheme HousePlanScanner \
@@ -32,11 +55,24 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            2>&1 | tee build.log | grep -E "(error:|warning:|BUILD)"
+            2>&1 | tee build.log | grep -E "(error:|warning:|BUILD SUCCEEDED|BUILD FAILED|CompileSwift|Ld )" || true
+          
+          # Check result from log
+          if grep -q "BUILD FAILED" build.log; then
+            echo "--- ERRORS ---"
+            grep "error:" build.log | head -30
+            exit 1
+          fi
 
       - name: Package unsigned IPA
         run: |
-          APP=$(find build/HousePlanScanner.xcarchive/Products/Applications -name "*.app" | head -1)
+          APP=$(find build/HousePlanScanner.xcarchive/Products/Applications -name "*.app" 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: No .app found in archive"
+            find build/ -type d | head -20
+            exit 1
+          fi
+          echo "Packaging: $APP"
           mkdir -p build/Payload
           cp -r "$APP" build/Payload/
           cd build && zip -qr HousePlanScanner-unsigned.ipa Payload/
@@ -49,8 +85,8 @@ jobs:
           path: build/HousePlanScanner-unsigned.ipa
           retention-days: 30
 
-      - name: Upload build log on failure
-        if: failure()
+      - name: Upload build log (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
