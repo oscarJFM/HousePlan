@@ -9,6 +9,14 @@ import SceneKit
 final class RoomCaptureCoordinator: NSObject, ObservableObject,
     RoomCaptureSessionDelegate, RoomCaptureViewDelegate {
 
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func encode(with coder: NSCoder) {
+        // No encoding needed
+    }
+
     @Published var isScanning = false
     @Published var isDone = false
     @Published var instructionText = "Move slowly around the room"
