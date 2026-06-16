@@ -9,12 +9,14 @@ import SceneKit
 final class RoomCaptureCoordinator: NSObject, ObservableObject,
     RoomCaptureSessionDelegate, RoomCaptureViewDelegate {
 
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     @Published var isScanning = false
     @Published var isDone = false
     @Published var instructionText = "Move slowly around the room"
     @Published var capturedRoom: CapturedRoom?
-    @Published var finalResults: RoomCaptureSession.Results?
-
     let session = RoomCaptureSession()
 
     override init() {
@@ -55,7 +57,7 @@ final class RoomCaptureCoordinator: NSObject, ObservableObject,
     // ── RoomCaptureViewDelegate ─────────────────────────────────────────────
 
     nonisolated func captureView(
-        didPresent processedResult: ProcessedRoom,
+        didPresent result: CapturedRoom,
         error: Error?
     ) {
         Task { @MainActor in
@@ -75,7 +77,6 @@ final class RoomCaptureCoordinator: NSObject, ObservableObject,
 
     func stopSession(captureView: RoomCaptureView) {
         session.stop()
-        captureView.stopCapture(pauseARSession: true)
     }
 
     func exportUSDZ() async -> URL? {
@@ -85,7 +86,7 @@ final class RoomCaptureCoordinator: NSObject, ObservableObject,
             .appendingPathExtension("usdz")
         do {
             let structure = try await RoomBuilder(options: [])
-                .capturedStructure(from: [room])
+                .finalResult(for: room)
             try structure.export(to: url)
             return url
         } catch {
@@ -124,7 +125,7 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: RoomCaptureView, context: Context) {}
 
     static func dismantleUIView(_ uiView: RoomCaptureView, coordinator: ()) {
-        uiView.session?.stop()
+        // Session is managed by coordinator
     }
 }
 
@@ -243,10 +244,10 @@ struct RoomScanView: View {
                 RoomPreviewScene(room: room)
                     .frame(maxWidth: .infinity)
                     .frame(height: 340)
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color(UIColor.secondarySystemBackground))
             } else {
                 Rectangle()
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(Color(UIColor.secondarySystemBackground))
                     .frame(height: 340)
                     .overlay {
                         ProgressView("Processing…")
@@ -334,7 +335,7 @@ struct RoomPreviewScene: UIViewRepresentable {
         sceneView.scene = buildScene()
         sceneView.allowsCameraControl = true
         sceneView.autoenablesDefaultLighting = true
-        sceneView.backgroundColor = UIColor(.secondarySystemBackground)
+        sceneView.backgroundColor = UIColor.secondarySystemBackground
         sceneView.antialiasingMode = .multisampling4X
         return sceneView
     }
@@ -428,7 +429,7 @@ struct StatBadge: View {
         }
         .frame(minWidth: 52)
         .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground))
+        .background(Color(UIColor.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
