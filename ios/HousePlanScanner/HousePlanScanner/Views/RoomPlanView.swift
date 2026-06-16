@@ -9,10 +9,6 @@ import SceneKit
 final class RoomCaptureCoordinator: NSObject, ObservableObject,
     RoomCaptureSessionDelegate, RoomCaptureViewDelegate {
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     @Published var isScanning = false
     @Published var isDone = false
     @Published var instructionText = "Move slowly around the room"
@@ -85,9 +81,7 @@ final class RoomCaptureCoordinator: NSObject, ObservableObject,
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("usdz")
         do {
-            let structure = try await RoomBuilder(options: [])
-                .finalResult(for: room)
-            try structure.export(to: url)
+            try room.export(to: url)
             return url
         } catch {
             print("USDZ export failed: \(error)")
