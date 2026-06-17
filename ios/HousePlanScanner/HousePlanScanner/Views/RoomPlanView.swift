@@ -1,6 +1,7 @@
 import SwiftUI
 import RoomPlan
 import SceneKit
+import AVFoundation
 
 // MARK: - RoomCaptureCoordinator
 // Bridges RoomPlan's delegate callbacks into our SwiftUI world.
@@ -160,12 +161,29 @@ struct RoomScanView: View {
         phase = .reviewing
     }
 
+    func startScan() {
+        guard let view = captureView else { return }
+        coordinator.startSession(captureView: view)
+        phase = .scanning
+    }
+
+    func requestCameraPermission() {
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            if !granted {
+                print("Camera permission denied")
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             // ── Scanning phase ─────────────────────────────────────────────
             if phase == .scanning {
                 RoomCaptureViewRepresentable(coordinator: coordinator, captureView: $captureView)
                     .ignoresSafeArea()
+                    .onAppear {
+                        requestCameraPermission()
+                    }
 
                 VStack {
                     // Instruction pill
@@ -288,7 +306,7 @@ struct RoomScanView: View {
 
                 HStack(spacing: 16) {
                     Button("Rescan") {
-                        phase = .scanning
+                        startScan()
                     }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
