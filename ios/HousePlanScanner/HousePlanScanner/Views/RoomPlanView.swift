@@ -74,6 +74,7 @@ final class RoomCaptureCoordinator: NSObject, ObservableObject,
 
     func startSession(captureView: RoomCaptureView) {
         let config = RoomCaptureSession.Configuration()
+        captureView.captureSession = session
         captureView.delegate = self
         session.run(configuration: config)
         isScanning = true
